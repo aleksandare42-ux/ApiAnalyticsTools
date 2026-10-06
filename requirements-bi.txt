@@ -1,0 +1,2 @@
+# Optional: lets the dashboard build Tableau .hyper extracts (~70 MB download)
+tableauhyperapi

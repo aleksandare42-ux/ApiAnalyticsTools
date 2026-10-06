@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payment Ops Analytics</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232a78d6'/><path d='M7 21l6-6 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="stylesheet" href="style.css?v=2">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="nav">
+    <div class="brand"><span class="logo"></span><div><b>PayOps</b><small>Analytics Simulator</small></div></div>
+    <nav id="nav">
+      <a href="#overview" data-page="overview">Overview</a>
+      <a href="#breakdown" data-page="breakdown">Breakdown</a>
+      <a href="#anomalies" data-page="anomalies">Anomalies <span class="pill" id="nav-anoms" hidden></span></a>
+      <a href="#feed" data-page="feed">Live feed</a>
+      <div class="nav-sep">Operate</div>
+      <a href="#control" data-page="control">Traffic &amp; routing</a>
+      <a href="#chaos" data-page="chaos">Chaos lab <span class="pill warn" id="nav-chaos" hidden></span></a>
+      <a href="#tester" data-page="tester">Payment tester</a>
+      <div class="nav-sep">Data</div>
+      <a href="#data" data-page="data">Dataset &amp; export</a>
+      <a href="#bi" data-page="bi">BI tools</a>
+      <a href="#sql" data-page="sql">SQL lab</a>
+      <a href="#services" data-page="services">Services</a>
+    </nav>
+    <div class="nav-foot">
+      <button id="theme-btn" class="ghost small" title="Toggle theme">Theme</button>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <h1 id="page-title">Overview</h1>
+      <div class="filters" id="filters">
+        <div class="seg" id="window-seg"></div>
+        <select id="source-sel" title="Data source">
+          <option value="all">All data</option>
+          <option value="live">Live only</option>
+          <option value="seed">Historical seed</option>
+        </select>
+        <label class="toggle" title="Auto refresh"><input type="checkbox" id="auto-refresh" checked><span></span>Auto</label>
+        <span class="traffic-badge" id="traffic-badge">traffic: -</span>
+      </div>
+    </header>
+
+    <!-- ======================== OVERVIEW -->
+    <section class="page" id="page-overview">
+      <div class="empty-state card" id="empty-state" hidden>
+        <h2>No transactions in this window</h2>
+        <p>Load a historical dataset with injected anomalies, or start live traffic through the gateway.</p>
+        <div class="row">
+          <button class="primary" data-action="quick-seed">Seed 500k historical transactions</button>
+          <button data-action="quick-traffic">Start live traffic (15 TPS)</button>
+        </div>
+        <p class="muted small">Tip: historical data sits in the past 30 days, switch the window to <b>30d</b> to see it.</p>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <div class="grid g2">
+        <div class="card"><div class="card-h"><h3>Approval rate by provider</h3><span class="muted small" id="bucket-label"></span></div><div class="chart"><canvas id="ch-approval"></canvas></div></div>
+        <div class="card"><div class="card-h"><h3>Avg processing time by provider, ms</h3></div><div class="chart"><canvas id="ch-latency"></canvas></div></div>
+        <div class="card"><div class="card-h"><h3>Transaction volume by outcome</h3></div><div class="chart"><canvas id="ch-volume"></canvas></div></div>
+        <div class="card"><div class="card-h"><h3>Decline &amp; error reasons</h3></div><div class="chart"><canvas id="ch-reasons"></canvas></div></div>
+      </div>
+      <div class="grid g2">
+        <div class="card"><div class="card-h"><h3>Provider performance</h3></div><div class="table-wrap" id="ov-providers"></div></div>
+        <div class="card"><div class="card-h"><h3>Open anomalies</h3><a href="#anomalies" class="small">all</a></div><div id="ov-anoms"></div></div>
+      </div>
+    </section>
+
+    <!-- ======================== BREAKDOWN -->
+    <section class="page" id="page-breakdown" hidden>
+      <div class="card">
+        <div class="card-h">
+          <div class="seg" id="dim-seg"></div>
+          <button class="ghost small" data-action="export-breakdown">Download CSV</button>
+        </div>
+        <div class="table-wrap" id="breakdown-table"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Approval rate heatmap</h3>
+          <div class="row"><select id="hm-rows"><option value="country">Country</option><option value="merchant">Merchant</option><option value="payment_method">Method</option></select>
+          <span class="muted">by</span><select id="hm-cols"><option value="provider">Provider</option><option value="payment_method">Method</option></select></div>
+        </div>
+        <div class="table-wrap" id="heatmap"></div>
+        <div class="legend-scale"><span>low</span><i></i><span>high approval</span><span class="muted small">(cells with &lt; 20 tx are dimmed)</span></div>
+      </div>
+    </section>
+
+    <!-- ======================== ANOMALIES -->
+    <section class="page" id="page-anomalies" hidden>
+      <div class="card">
+        <div class="card-h">
+          <div class="row">
+            <div class="seg" id="an-status"><button data-v="open" class="on">Open</button><button data-v="resolved">Resolved</button><button data-v="all">All</button></div>
+            <div class="seg" id="an-by"><button data-v="all" class="on">All</button><button data-v="live">Live</button><button data-v="batch">Historical</button></div>
+          </div>
+          <div class="row">
+            <button data-action="detector-run">Run live detection now</button>
+            <button data-action="detector-scan">Scan history</button>
+            <button class="ghost" data-action="clear-anomalies">Clear live</button>
+          </div>
+        </div>
+        <p class="muted small" id="detector-status"></p>
+        <div class="table-wrap" id="anomaly-table"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Detector vs injected ground truth (historical seed)</h3></div>
+        <div id="evaluation"></div>
+      </div>
+    </section>
+
+    <!-- ======================== FEED -->
+    <section class="page" id="page-feed" hidden>
+      <div class="card">
+        <div class="card-h">
+          <div class="row">
+            <div class="seg" id="feed-status"><button data-v="" class="on">All</button><button data-v="approved">Approved</button><button data-v="declined">Declined</button><button data-v="error">Error</button></div>
+            <select id="feed-provider"><option value="">Any provider</option></select>
+            <select id="feed-merchant"><option value="">Any merchant</option></select>
+          </div>
+          <span class="muted small" id="feed-meta"></span>
+        </div>
+        <div class="table-wrap" id="feed-table"></div>
+      </div>
+    </section>
+
+    <!-- ======================== CONTROL -->
+    <section class="page" id="page-control" hidden>
+      <div class="grid g2">
+        <div class="card">
+          <div class="card-h"><h3>Traffic generator</h3><span id="traffic-state" class="badge">-</span></div>
+          <div class="row">
+            <button class="primary" data-action="traffic-start">Start</button>
+            <button data-action="traffic-stop">Stop</button>
+          </div>
+          <label class="field">Target TPS: <b id="tps-val">15</b>
+            <input type="range" id="tps" min="1" max="150" value="15"></label>
+          <div class="row">
+            <input type="number" id="burst-n" value="500" min="1" max="20000" style="width:110px">
+            <button data-action="burst">Send burst</button>
+            <button class="ghost small" data-action="traffic-reset-stats">Reset counters</button>
+          </div>
+          <div class="stats" id="traffic-stats"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Gateway</h3></div>
+          <label class="toggle big"><input type="checkbox" id="gw-cascade"><span></span>Cascading: retry soft declines / timeouts on the next provider</label>
+          <label class="toggle big"><input type="checkbox" id="gw-smart"><span></span>Smart routing: shift weight away from providers with low rolling approval</label>
+          <label class="field">Provider timeout, ms <input type="number" id="gw-timeout" min="200" max="10000" step="100"></label>
+          <div class="card-h"><h3>Detector</h3></div>
+          <div class="row wrap">
+            <label class="toggle"><input type="checkbox" id="det-enabled"><span></span>Enabled</label>
+            <label class="field inline">every <input type="number" id="det-interval" min="5" max="600" style="width:70px"> s</label>
+            <label class="field inline">window <input type="number" id="det-window" min="1" max="120" style="width:70px"> min</label>
+            <label class="field inline">gap <input type="number" id="det-guard" min="0" max="120" style="width:70px"> min</label>
+            <label class="field inline">baseline <input type="number" id="det-baseline" min="5" max="1440" style="width:80px"> min</label>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Providers &amp; routing</h3><button class="ghost small" data-action="providers-reset">Reset to defaults</button></div>
+        <div class="table-wrap" id="providers-table"></div>
+        <p class="muted small">Weight is the routing share among providers that support the payment method. Effective weight includes smart routing. Base approval / latency change the simulator's healthy behaviour.</p>
+      </div>
+    </section>
+
+    <!-- ======================== CHAOS -->
+    <section class="page" id="page-chaos" hidden>
+      <div class="card">
+        <div class="card-h"><h3>Incident presets</h3>
+          <label class="field inline">duration <input type="number" id="preset-min" value="15" min="1" max="1440" style="width:70px"> min</label></div>
+        <div class="presets" id="presets"></div>
+      </div>
+      <div class="grid g2">
+        <div class="card">
+          <div class="card-h"><h3>Custom rule</h3></div>
+          <form id="chaos-form" class="form-grid">
+            <label>Target<select name="target_type"></select></label>
+            <label>Value<select name="target_value"></select></label>
+            <label>Effect<select name="effect"></select></label>
+            <label>Magnitude<input name="value" type="number" step="any" value="0.3"></label>
+            <label>Decline reason<select name="reason"><option value="">(default)</option></select></label>
+            <label>Minutes (0 = forever)<input name="minutes" type="number" value="15" min="0"></label>
+            <p class="muted small span2" id="effect-help"></p>
+            <button class="primary span2" type="submit">Inject</button>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Rules</h3><button class="ghost small" data-action="chaos-clear">Stop all</button></div>
+          <div id="chaos-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== TESTER -->
+    <section class="page" id="page-tester" hidden>
+      <div class="grid g2">
+        <div class="card">
+          <div class="card-h"><h3>Send a payment through the gateway</h3></div>
+          <form id="pay-form" class="form-grid">
+            <label>Merchant<select name="merchant_id"></select></label>
+            <label>Country<select name="country"></select></label>
+            <label>Amount<input name="amount" type="number" step="0.01" value="19.99"></label>
+            <label>Method<select name="payment_method"></select></label>
+            <label>Force provider<select name="force_provider"><option value="">(routing)</option></select></label>
+            <label>Repeat<input name="repeat" type="number" value="1" min="1" max="200"></label>
+            <button class="primary span2" type="submit">Pay</button>
+          </form>
+          <p class="muted small">Same request as <code>POST http://localhost:8000/v1/payments</code>, see <a href="http://localhost:8000/docs" target="_blank">gateway Swagger</a>.</p>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Response</h3><button class="ghost small" data-action="refund-last" id="refund-btn" disabled>Refund last approved</button></div>
+          <div id="pay-summary"></div>
+          <pre class="code" id="pay-result">-</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== DATA -->
+    <section class="page" id="page-data" hidden>
+      <div class="grid g2">
+        <div class="card">
+          <div class="card-h"><h3>Generate historical dataset</h3></div>
+          <form id="seed-form" class="form-grid">
+            <label>Rows<input name="rows" type="number" value="500000" step="50000" min="1000"></label>
+            <label>Days<input name="days" type="number" value="30" min="2" max="365"></label>
+            <label class="toggle"><input type="checkbox" name="inject_anomalies" checked><span></span>Inject anomalies</label>
+            <label class="toggle"><input type="checkbox" name="replace" checked><span></span>Replace previous seed</label>
+            <label class="toggle span2"><input type="checkbox" name="scan_after" checked><span></span>Run historical anomaly scan afterwards</label>
+            <button class="primary span2" type="submit">Generate &amp; load into Postgres</button>
+          </form>
+          <div class="progress" id="seed-progress" hidden><i></i><span></span></div>
+          <p class="muted small">Injected: AlphaPay decline spike, BetaGate latency, LuvMatch refunds, Brazil success drop, GammaPSP timeouts, MelodyBox traffic drop.</p>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Export for Tableau / Excel</h3></div>
+          <div class="exports" id="exports"></div>
+          <p class="muted small">Or connect Tableau directly: PostgreSQL, <code>localhost:5432</code>, db <code>opanalytics</code>, user <code>analyst</code> / <code>analyst</code> (read-only). Views: <code>v_transactions</code>, <code>v_hourly_provider</code>, <code>v_daily_kpis</code>, <code>v_daily_merchant</code>, <code>v_country_provider</code>.</p>
+          <div class="card-h"><h3>Reset</h3></div>
+          <div class="row wrap">
+            <button class="ghost" data-action="reset" data-scope="live">Delete live data</button>
+            <button class="ghost" data-action="reset" data-scope="seed">Delete seed data</button>
+            <button class="ghost" data-action="reset" data-scope="anomalies">Clear anomalies</button>
+            <button class="danger" data-action="reset" data-scope="all">Wipe everything</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== SQL -->
+    <!-- ======================== BI TOOLS -->
+    <section class="page" id="page-bi" hidden>
+      <div class="grid g2">
+        <div class="card">
+          <div class="card-h"><h3>Database connection for BI tools</h3>
+            <button data-action="bi-check">Check access</button></div>
+          <div id="bi-connection"></div>
+          <div id="bi-check-result"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h3>Learn</h3></div>
+          <p>Step by step course with exercises: <code>bi/GUIDE_RU.md</code> in the project folder.
+            Each exercise asks you to find one of the anomalies hidden in the historical data,
+            the answers are below.</p>
+          <div id="bi-exercises"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <div class="seg" id="bi-tool-seg">
+            <button data-v="tableau" class="on">Tableau</button>
+            <button data-v="powerbi">Power BI</button>
+            <button data-v="excel">Excel / other</button>
+          </div>
+          <label class="field inline">dataset <select id="bi-dataset"></select></label>
+        </div>
+        <div id="bi-tool"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Datasets</h3><span class="muted small" id="bi-odata"></span></div>
+        <div class="table-wrap" id="bi-datasets"></div>
+      </div>
+    </section>
+
+    <section class="page" id="page-sql" hidden>
+      <div class="card">
+        <div class="card-h">
+          <select id="sql-examples"><option value="">Example queries...</option></select>
+          <div class="row"><span class="muted small">read-only, Ctrl+Enter to run</span><button class="primary" data-action="sql-run">Run</button></div>
+        </div>
+        <textarea id="sql-text" spellcheck="false">SELECT provider, count(*) AS tx,
+       round(100.0 * avg((status = 'approved')::int), 2) AS approval_pct,
+       round(avg(processing_time_ms)) AS avg_ms
+FROM transactions
+WHERE created_at > now() - interval '1 hour'
+GROUP BY provider ORDER BY tx DESC;</textarea>
+        <p class="muted small" id="sql-meta"></p>
+        <div class="table-wrap" id="sql-result"></div>
+      </div>
+    </section>
+
+    <!-- ======================== SERVICES -->
+    <section class="page" id="page-services" hidden>
+      <div class="services" id="services"></div>
+      <div class="card">
+        <div class="card-h"><h3>Architecture</h3></div>
+        <pre class="code arch">
+traffic :8002  --POST /v1/payments-->  gateway :8000  --authorize-->  providers :8001
+(merchants, refunds)                   (routing, cascade,             (AlphaPay, BetaGate,
+                                        smart routing)                 GammaPSP, DeltaAcq)
+                                             |
+                                             v
+                                       postgres :5432  <--  detector :8003 (anomalies)
+                                             ^
+                                             |
+                                       dashboard :8080 (this UI + API)
+                                       adminer :8081, Tableau / Metabase :3000
+</pre>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+<script src="app.js?v=2"></script>
+<script src="bi.js?v=2"></script>
+</body>
+</html>
